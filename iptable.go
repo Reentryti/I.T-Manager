@@ -123,9 +123,3 @@ func modRules(rule RuleIptable, line int) error {
 
 	return nil
 }
-
-/*
-refresh rules list
-Not necessary right now
-*/
-func refreshRules() {}
