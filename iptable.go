@@ -1,5 +1,6 @@
 /*
-	Iptable functions
+	Iptable functions depend on iptables options
+
 */
 
 package main
@@ -19,6 +20,7 @@ type RuleIptable struct {
 	source      string
 	destination string
 	protocol    string
+	/*	interface	string (can be added)*/
 }
 
 /*	running iptable command*/
@@ -95,7 +97,7 @@ func delRules(chain string, line int) error {
 }
 
 /*	modifying rules*/
-func modRules(rule RuleIptable, line int) error {
+func updateRules(rule RuleIptable, line int) error {
 	//	line must be a positive number
 	if line <= 0 {
 		return fmt.Errorf("Numero de ligne invalide :%d", line)
@@ -122,4 +124,32 @@ func modRules(rule RuleIptable, line int) error {
 	}
 
 	return nil
+}
+
+/*	Check for the existence of a rule*/
+func checkRule(rule RuleIptable) (bool, error) {
+
+	rules := currentRules()
+
+	for _, r := range rules {
+		if strings.Contains(r, rule.source) &&
+			strings.Contains(r, rule.destination) &&
+			strings.Contains(r, rule.protocol) &&
+			strings.Contains(r, rule.action) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+/*	Filters iptables rules*/
+func filter(chain string) ([]string, error) {
+	output, err := sudoRun("-L", chain)
+
+	if err != nil {
+
+		return nil, fmt.Errorf("Erreur lors du filtrage de la chaine %s : %v", chain, err)
+	}
+	lines := strings.Split(string(output), "\n")
+	return lines, nil
 }
