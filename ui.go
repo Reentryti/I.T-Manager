@@ -6,84 +6,124 @@ package main
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
-	"strconv"
 )
 
 /* 	Main UI Fonction to integrate all parts of block*/
 func userInterface(app *tview.Application) tview.Primitive {
 
-	header := buildHeader("IP Table Manager") //text view for title display
+	/*	Header Block
+		text view for the application title display
+	*/
+	header := buildHeader("IP Table Manager")
 
-	//	rulesBox := buildBlockRules() // iptable rules display
+	/*	Iptable rules Block
+		Show all iptables rules available
+		Function build layout and display rules
+	*/
 	blockRule, listRule := buildBlockRules()
 
-	formBox := buildBlockForm() //	form options for fill
+	/*	Filter rules chain Block
+		Display rules depending on chain values
+	*/
+	blockFilter := buildBlockFilter()
 
-	optionsBox := buildBlockOptions(app, listRule, func(actionMenu string) {
+	/*	Forms Block
+		Realize CRUD operations
+		Function show dynamic forms depend on operations
+	*/
+	blockForm := buildBlockForm() //	form options for fill
 
-		formBox.Clear(true) //	Clear the form block
+	/*	Informations Block
+		Display rules meaning
+	*/
+	blockInfos := buildBlockInfos()
 
-		//
+	/*
+		Key commands Block
+		Show all commands for crud operations
+		Build with this options (add, delete, update, refresh, save & quit)
+	*/
+	blockKey := buildBlockOptions(app, listRule, func(actionMenu string) {
+
+		blockForm.Clear(true) //	Clear the form block
+
+		/*	Form block content depend on the user action*/
 		switch actionMenu {
 
 		case "add":
 			//	Form Title
-			formBox.SetTitle("Ajouter une regle")
-			
-			//Form input
-			formBox.AddInputField("Chaine", []string{"Input", "Output", "Forward"}, 0, nil).
+			blockForm.SetTitle("Ajouter une regle")
+
+			/*	Form values*/
+			blockForm.AddDropDown("Chaine", []string{"Input", "Output", "Forward"}, 0, nil).
 				AddDropDown("Methode d'ajout", []string{"-A(append)", "-I(insert)"}, 0, nil).
 				AddInputField("IP Source", "", 20, nil, nil).
 				AddInputField("IP Destination", "", 20, nil, nil).
-				AddInputField("Protocol", "", 30, nil, nil). 
+				AddInputField("Protocol", "", 30, nil, nil).
 				AddDropDown("Action", []string{"Accept", "Drop"}, 0, nil).
 				AddButton("Ok", func() { //	addRules function call with error management and action confirmation
 
 					/*	Retrieve  form values*/
-					chainId, chain := formBox.GetFormItemByLabel("Chaine").(*tview.DropDown).GetCurrentOption()-
+					chainId, chain := blockForm.GetFormItemByLabel("Chaine").(*tview.DropDown).GetCurrentOption()
 					if chainId < 0 {
 						errorDisplay(app, "Chaine non selectionnée")
 						return
 					}
 
-					optId, option := formBox.GetFormItemByLabel("Methode d'ajout").(*tview.DropDown).GetCurrentOption()
+					optId, option := blockForm.GetFormItemByLabel("Methode d'ajout").(*tview.DropDown).GetCurrentOption()
 
-					if optId < 0{
+					if optId < 0 {
 						errorDisplay(app, "Methode d'ajout non selectionée")
 						return
 					}
 					optionAdd := strings.Split(option, "")[0]
 
-					srcInput := formBox.GetFormItemByLabel("IP Source").(*tview.InputField).GetText()
-					dstInput := formBox.GetFormItemByLabel("IP Destination").(*tview.InputField).GetText()
+					srcInput := blockForm.GetFormItemByLabel("IP Source").(*tview.InputField).GetText()
+					dstInput := blockForm.GetFormItemByLabel("IP Destination").(*tview.InputField).GetText()
+					protoInput := blockForm.GetFormItemByLabel("Protocole").(*tview.InputField).GetText()
 
-					_, action := formBox.GetFormItemByLabel("Action").(*tview.DropDown).GetCurrentOption()
+					_, action := blockForm.GetFormItemByLabel("Action").(*tview.DropDown).GetCurrentOption()
 
 					if srcInput == "" || dstInput == "" {
 						errorDisplay(app, "Veuillez renseigner tous les champs")
 						return
 					}
 
+					/*	Define the current rule with the get values*/
+					ruleAdd := RuleIptable{
+						chain:       chain,
+						source:      srcInput,
+						destination: dstInput,
+						protocol:    protoInput,
+						action:      action,
+					}
+					/*	Result on this display message*/
+					mesg := fmt.Sprintf("Ajouter la regle suivante? \n %s\nSource %s\nDestination %s\nProtocole", srcInput, dstInput, protoInput)
+
 					/*	Confirmation on add rule option*/
-					confirmAction(app, "Voulez vous vraiment ajouter cette regle?", func() {
-						err := addRules(rule, optionAdd)
+					confirmAction(app, mesg, func() {
+						err := addRules(ruleAdd, optionAdd)
 						if err != nil {
 							errorDisplay(app, fmt.Sprintf("Erreur : %v", err))
 							return
 						}
+
 						refreshRules(listRule)
 					})
 
 				})
 
 		case "delete":
-			formBox.SetTitle("Supprimer une regle")
-			formBox.AddInputField("Numero de regle", "", 5, nil, nil).
+			blockForm.SetTitle("Supprimer une regle")
+			blockForm.AddInputField("Numero de regle", "", 5, nil, nil).
 				AddButton("Ok", func() { //	delete function call
 
-					numField := formBox.GetFormItemByLabel("Numero de regle").(*tview.InputField) //get the rule number to delete
+					numField := blockForm.GetFormItemByLabel("Numero de regle").(*tview.InputField) //get the rule number to delete
 					lineStr := numField.GetText()
 
 					line, err := strconv.Atoi(lineStr)
@@ -105,17 +145,33 @@ func userInterface(app *tview.Application) tview.Primitive {
 					})
 				})
 
-		case "modify":
-			formBox.SetTitle("Modifier une regle")
-			formBox.AddInputField("Numero de regle", "", 5, nil, nil).
+		case "update":
+			blockForm.SetTitle("Modifier une regle")
+			blockForm.AddInputField("Numero de regles", "", 5, nil, nil).
 				AddInputField("Nouvelle source", "", 20, nil, nil).
 				AddDropDown("Action", []string{"", ""}, 0, nil).
 				AddButton("Ok", func() {
 					//	modify function call
+					/*	get text input*/
+					lineTxt := blockForm.GetFormItemByLabel("Numero de regles").(*tview.InputField).GetText()
+					lineNum, err := strconv.Atoi(lineTxt) //	convert to integer
+					if err != nil || lineNum <= 0 {
+						errorDisplay(app, "Chaine non selectionnée")
+						return
+					}
+
+					/* Create the new rule*/
+					newSource := blockForm.GetFormItemByLabel("Nouvelle source").(*tview.InputField).GetText()
+					_, newAction := blockForm.GetFormItemByLabel("Action").(*tview.DropDown).GetCurrentOption()
+
+					ruleChange := RuleIptable{
+						source: newSource,
+						action: newAction,
+					}
 
 					/*	Handle confirmation before changing choosen rules*/
 					confirmAction(app, "Voulez vous vraiment modifier cette regle ?", func() {
-						err := modRules()
+						err := updateRules(ruleChange, lineNum)
 						if err != nil {
 							errorDisplay(app, fmt.Sprintf("Erreur %v", err))
 							return
@@ -126,18 +182,22 @@ func userInterface(app *tview.Application) tview.Primitive {
 				})
 
 		case "refresh":
-			formBox.SetTitle("Rafraichir la liste des regles")
-			formBox.AddButton("Refresh", func() {
+			blockForm.SetTitle("Rafraichir la liste des regles")
+			blockForm.AddButton("Refresh", func() {
 				//	refresh function call
 				refreshRules(listRule)
 			})
 
 		case "save":
-			formBox.SetTitle("Sauvegarder les regles")
-			formBox.AddButton("Save", func() {
+			blockForm.SetTitle("Sauvegarder les regles")
+			blockForm.AddButton("Save", func() {
 				//	save function call
 				confirmAction(app, "Vous etes entrain de sauvegarder toutes vos actions", func() {
-					err := saveRule(listRule)
+					err := save()
+					if err != nil {
+						errorDisplay(app, fmt.Sprintf("Erreur %v", err))
+						return
+					}
 				})
 			})
 		case "quit":
@@ -145,33 +205,42 @@ func userInterface(app *tview.Application) tview.Primitive {
 		}
 	})
 
-	/*othersBox := buildBlockFacult()
-	Coming soon*/
-	body := tview.NewFlex().
-		AddItem(optionsBox, 20, 1, true).
+	/* Layout design*/
+	/*	Left block (Filter + Keys)*/
+	leftFrame := tview.NewFlex().
+		SetDirection(tview.FlexRow).
+		AddItem(blockFilter, 0, 1, false).
+		AddItem(blockKey, 0, 2, false)
+
+	/*	Bottom block (Form + Informations)*/
+	bottomFrame := tview.NewFlex().
+		AddItem(blockForm, 0, 2, false).
+		AddItem(blockInfos, 0, 1, false)
+
+	/*	Main Block (iptables rules + leftFrame)*/
+	mainFrame := tview.NewFlex().
+		AddItem(leftFrame, 25, 1, true).
 		AddItem(blockRule, 0, 3, false)
 
-	render := tview.NewFlex().
+	/*	Full layout*/
+	layout := tview.NewFlex().
 		SetDirection(tview.FlexRow).
 		AddItem(header, 3, 1, false).
-		AddItem(body, 0, 5, true).
-		AddItem(formBox, 12, 1, false)
+		AddItem(mainFrame, 0, 6, true).
+		AddItem(bottomFrame, 10, 2, false)
 
-	/* Handling cursor focus to navigate between different boxes/frames*/
-	focusables := []tview.Primitive{listRule, optionsBox, formBox}
-	current := 0
+	/* Handling cursor focus to navigate between different frames*/
+	curs := []tview.Primitive{blockFilter, blockKey, blockRule, blockForm, listRule}
+	navigation(app, curs)
 
-	/* 	Define Tab as navigation button*/
-	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		if event.Key() == tcell.KeyTab {
-			current = (current + 1) % len(focusables)
-			app.SetFocus(focusables[current])
-			return nil
-		}
-		return event
-	})
+	return layout
+}
 
-	return render
+/*	Simply building block to set border and title*/
+func buildBlock(title string) *tview.Box {
+	return tview.NewBox().
+		SetBorder(true).
+		SetTitle(title)
 }
 
 /*	Header Tui block*/
@@ -234,9 +303,30 @@ func buildBlockOptions(app *tview.Application, listRule *tview.List, onAction fu
 	return options
 }
 
-/*	Dont know what to make herer*/
-func buildBlockFacult() {
+/*	Show values recap of current rule*/
+func buildBlockInfos() *tview.TextView {
 
+	infos := tview.NewTextView().
+		SetText("[yellow]Informations: ")
+	infos.SetBorder(true).SetTitle("Informations")
+
+	return infos
+}
+
+/*	*/
+func buildBlockFilter() *tview.Form {
+	filter := tview.NewForm().
+		AddInputField("Source", "", 15, nil, nil).
+		AddInputField("Destination", "", 15, nil, nil).
+		AddDropDown("Action", []string{"Accept", "Drop"}, 0, nil).
+		AddButton("Filtre", func() {
+			//filter callback
+			fmt.Println("Filtrage")
+		})
+	//	Design
+	filter.SetBorder(true).SetTitle("Filter")
+
+	return filter
 }
 
 /*	*/
